@@ -22,7 +22,7 @@ class WC_Everydaymoney_API {
         $this->api_base_url = rtrim( EVERYDAYMONEY_GATEWAY_API_URL, '/' );
 
         if ( $this->gateway->test_mode ) {
-            $test_api_url = defined('EVERYDAYMONEY_GATEWAY_TEST_API_URL') ? EVERYDAYMONEY_GATEWAY_TEST_API_URL : 'https://em-api-test.everydaymoney.app'; // Example test URL without /v1
+            $test_api_url = defined('EVERYDAYMONEY_GATEWAY_TEST_API_URL') ? EVERYDAYMONEY_GATEWAY_TEST_API_URL : 'http://localhost:8000'; // Example test URL without /v1
             $this->api_base_url = apply_filters( 'wc_everydaymoney_test_api_url', rtrim($test_api_url, '/') );
             $this->logger->log( 'API Handler initialized in Test Mode. API Base URL: ' . $this->api_base_url, 'debug' );
         } else {
