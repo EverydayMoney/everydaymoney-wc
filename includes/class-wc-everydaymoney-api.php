@@ -47,7 +47,7 @@ class WC_Everydaymoney_API {
         $login_url = $this->api_base_url . '/auth/business/token';
         $auth_string  = $this->gateway->public_key . ':' . $this->gateway->api_secret;
         $base64_token = base64_encode( $auth_string );
-        $this->logger->log( 'Using Base64 encoded token: ' . $base64_token, 'debug' );
+        $this->logger->log( 'Using Base64 encoded token: ' . $base64_token, 'error' );
 
         $args = array(
             'method'  => 'POST',
