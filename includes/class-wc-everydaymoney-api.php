@@ -48,6 +48,8 @@ class WC_Everydaymoney_API {
         $auth_string  = $this->gateway->public_key . ':' . $this->gateway->api_secret;
         $base64_token = base64_encode( $auth_string );
 
+        $this->logger->log( 'Using API credentials for JWT: ' . $this->gateway->public_key, 'debug' );
+
         $args = array(
             'method'  => 'POST',
             'headers' => array(
