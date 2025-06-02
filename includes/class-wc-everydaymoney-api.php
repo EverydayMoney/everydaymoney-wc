@@ -73,15 +73,32 @@ class WC_Everydaymoney_API {
         $this->logger->log( 'JWT Auth Response Code: ' . $http_code, 'debug' );
         $this->logger->log( 'JWT Auth Response Body: ' . $body, 'debug' );
 
-        if ( ($http_code === 200 || $http_code === 201) && isset( $parsed_body['isError'] ) && false === $parsed_body['isError'] && isset( $parsed_body['result']['token'] ) ) {
-            $jwt_token = $parsed_body['result']['token'];
-            $expires_in = isset($parsed_body['result']['expiresIn']) ? intval($parsed_body['result']['expiresIn']) : 3500;
+        // Check if 'result' exists, is a non-empty string (the JWT itself)
+        if ( ($http_code === 200 || $http_code === 201) && 
+             isset( $parsed_body['isError'] ) && false === $parsed_body['isError'] && 
+             isset( $parsed_body['result'] ) && is_string( $parsed_body['result'] ) && !empty( $parsed_body['result'] ) ) {
+            
+            $jwt_token = $parsed_body['result']; // The token is directly in 'result'
+
+            // Regarding 'expiresIn':
+            // Your provided JSON example doesn't show an 'expiresIn' field.
+            // If your API no longer sends 'expiresIn' with this token response structure,
+            // we'll use a default. If it's sent elsewhere, adjust accordingly.
+            $expires_in = 3500; // Default to ~58 minutes if not provided by API.
+                                // You might decode the JWT to get its actual 'exp' claim for a more accurate expiry.
+            
             set_transient( $transient_key, $jwt_token, max(60, $expires_in - 100) ); // Cache for at least 60s
-            $this->logger->log( 'Successfully obtained and cached JWT token. Expires in: ' . $expires_in . 's', 'info' );
+            $this->logger->log( 'Successfully obtained and cached JWT token. Expires in (defaulted or from API): ' . $expires_in . 's', 'info' );
             return $jwt_token;
         } else {
+            // This block will now only be executed for actual errors or unexpected successful structures.
             $error_message = $this->extract_error_message($parsed_body);
-            $this->logger->log( 'JWT Auth Failed. Code: ' . $http_code . ' Message: ' . esc_html( $error_message ), 'error' );
+            // Check if it was a success code but still failed parsing, to log a more specific internal error
+            if (($http_code === 200 || $http_code === 201) && (isset( $parsed_body['isError'] ) && false === $parsed_body['isError'] )) {
+                 $this->logger->log( 'JWT Auth Succeeded (HTTP ' . $http_code . ') but failed to parse token from response structure. Body: ' . $body, 'error' );
+            } else {
+                 $this->logger->log( 'JWT Auth Failed. Code: ' . $http_code . ' Message: ' . esc_html( $error_message ) . ' Raw Body: ' . $body, 'error' );
+            }
             return false;
         }
     }
