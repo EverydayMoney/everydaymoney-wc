@@ -19,10 +19,10 @@ class WC_Everydaymoney_API {
     public function __construct( $gateway ) {
         $this->gateway      = $gateway;
         $this->logger       = new WC_Everydaymoney_Logger( $this->gateway->debug );
-        $this->api_base_url = rtrim( EVERYDAYMONEY_GATEWAY_API_URL, '/' );
+        $this->api_base_url = 'http://localhost:8080';
 
         if ( $this->gateway->test_mode ) {
-            $test_api_url = defined('EVERYDAYMONEY_GATEWAY_TEST_API_URL') ? EVERYDAYMONEY_GATEWAY_TEST_API_URL : 'http://localhost:8080'; // Example test URL without /v1
+            $test_api_url = defined('EVERYDAYMONEY_GATEWAY_TEST_API_URL') ? EVERYDAYMONEY_GATEWAY_TEST_API_URL : 'http://localhost:8080/'; // Example test URL without /v1
             $this->api_base_url = apply_filters( 'wc_everydaymoney_test_api_url', rtrim($test_api_url, '/') );
             $this->logger->log( 'API Handler initialized in Test Mode. API Base URL: ' . $this->api_base_url, 'debug' );
         } else {
@@ -47,7 +47,6 @@ class WC_Everydaymoney_API {
         $login_url = $this->api_base_url . '/auth/business/token';
         $auth_string  = $this->gateway->public_key . ':' . $this->gateway->api_secret;
         $base64_token = base64_encode( $auth_string );
-        $this->logger->log( 'Using Base64 encoded token: ' . $base64_token, 'error' );
 
         $args = array(
             'method'  => 'POST',
