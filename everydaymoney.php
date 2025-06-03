@@ -201,4 +201,18 @@ function everydaymoney_ajax_test_connection() {
 }
 add_action( 'wp_ajax_everydaymoney_test_connection', 'everydaymoney_ajax_test_connection' );
 
+
+add_action( 'init', function() {
+    if ( is_admin() ) {
+        error_log( 'Everydaymoney Debug: Plugin loaded' );
+        error_log( 'WooCommerce active: ' . ( class_exists( 'WooCommerce' ) ? 'Yes' : 'No' ) );
+        error_log( 'Gateway class exists: ' . ( class_exists( 'WC_Everydaymoney_Gateway' ) ? 'Yes' : 'No' ) );
+        
+        if ( function_exists( 'WC' ) && WC()->payment_gateways ) {
+            $gateways = WC()->payment_gateways->payment_gateways();
+            error_log( 'Registered gateways: ' . print_r( array_keys( $gateways ), true ) );
+        }
+    }
+});
+
 ?>
