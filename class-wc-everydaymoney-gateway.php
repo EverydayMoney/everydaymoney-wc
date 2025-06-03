@@ -162,25 +162,25 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         );
     }
 
-    public function is_available() {
-        // if ( 'yes' !== $this->enabled ) {
-        //     return false;
-        // }
-        // if ( empty( $this->public_key ) || empty( $this->api_secret ) ) {
-        //     if (is_admin() && ! wp_doing_ajax() ) { // Show message in admin if keys are missing
-        //         // This message location might not be ideal, consider a dedicated admin notice.
-        //     }
-        //     $this->logger->log( 'Gateway unavailable: Missing API credentials.', 'debug' );
-        //     return false;
-        // }
-        // if ( ! is_ssl() && ! $this->test_mode && ! defined('WP_DEBUG') ) {
-        //     $this->logger->log( 'Gateway unavailable: SSL is required for live mode.', 'warning' );
-        //     // Consider showing an admin notice for this too.
-        //     return false;
-        // }
-        // return parent::is_available();
-        return true;
-    }
+    // public function is_available() {
+    //     // if ( 'yes' !== $this->enabled ) {
+    //     //     return false;
+    //     // }
+    //     // if ( empty( $this->public_key ) || empty( $this->api_secret ) ) {
+    //     //     if (is_admin() && ! wp_doing_ajax() ) { // Show message in admin if keys are missing
+    //     //         // This message location might not be ideal, consider a dedicated admin notice.
+    //     //     }
+    //     //     $this->logger->log( 'Gateway unavailable: Missing API credentials.', 'debug' );
+    //     //     return false;
+    //     // }
+    //     // if ( ! is_ssl() && ! $this->test_mode && ! defined('WP_DEBUG') ) {
+    //     //     $this->logger->log( 'Gateway unavailable: SSL is required for live mode.', 'warning' );
+    //     //     // Consider showing an admin notice for this too.
+    //     //     return false;
+    //     // }
+    //     // return parent::is_available();
+    //     return true;
+    // }
 
     public function payment_fields() {
         if ( $this->description ) {
