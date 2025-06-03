@@ -173,7 +173,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
             $this->logger->log( 'Gateway unavailable: Missing API credentials.', 'debug' );
             return false;
         }
-        if ( ! is_ssl() && ! $this->test_mode ) {
+        if ( ! is_ssl() && ! $this->test_mode && ! defined('WP_DEBUG') ) {
             $this->logger->log( 'Gateway unavailable: SSL is required for live mode.', 'warning' );
             // Consider showing an admin notice for this too.
             return false;
