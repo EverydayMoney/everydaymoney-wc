@@ -30,7 +30,26 @@ const Label = () => {
         createElement(
             'span',
             { className: 'wc-block-components-payment-method-label__text' },
-            decodeEntities( settings.title || __( 'Everydaymoney', 'everydaymoney-gateway' ) )
+            decodeEntities( settings.title || __( 'Everydaymoney', 'everydaymoney-gateway' ) ),
+            settings.test_mode && createElement(
+                'span',
+                { 
+                    className: 'wc-block-components-payment-method-label__test-mode',
+                    style: {
+                        backgroundColor: '#f0b849',
+                        color: '#1e1e1e',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        textTransform: 'uppercase',
+                        padding: '2px 8px',
+                        borderRadius: '2px',
+                        marginLeft: '8px',
+                        display: 'inline-block',
+                        lineHeight: '1'
+                    }
+                },
+                __( 'Test mode', 'everydaymoney-gateway' )
+            )
         ),
         settings.icon && createElement(
             'img',
