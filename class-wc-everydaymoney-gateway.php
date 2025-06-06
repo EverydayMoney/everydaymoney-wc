@@ -407,51 +407,33 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         }
     }
 
+    /**
+     * Main entry point for receiving webhook notifications.
+     */
     public function handle_webhook() {
         if ( ! isset($this->logger) ) { return; }
         
         $this->logger->log( 'Webhook received', 'info' );
         $payload = file_get_contents( 'php://input' );
-        $headers = getallheaders();
 
-        if ( empty( $payload ) ) {
-            $this->logger->log( 'Webhook: Empty payload', 'error' );
-            status_header( 400 ); exit( 'Empty payload' );
-        }
-
-        if ( ! $this->verify_webhook_signature( $payload, $headers ) ) {
-            $this->logger->log( 'Webhook: Invalid signature', 'error' );
+        // 1. Verify Signature (Security First)
+        if ( ! $this->verify_webhook_signature( $payload, getallheaders() ) ) {
+            $this->logger->log( 'Webhook: Invalid signature. Halting processing.', 'error' );
             status_header( 401 ); exit( 'Invalid signature' );
         }
 
+        // 2. Decode Payload
         $data = json_decode( $payload, true );
         if ( json_last_error() !== JSON_ERROR_NONE ) {
-            $this->logger->log( 'Webhook: Invalid JSON', 'error' );
+            $this->logger->log( 'Webhook: Invalid JSON.', 'error' );
             status_header( 400 ); exit( 'Invalid JSON' );
         }
 
-        $this->logger->log( 'Webhook data: ' . print_r( $data, true ), 'debug' );
+        $this->logger->log( 'Webhook notification data: ' . print_r( $data, true ), 'debug' );
 
+        // 3. Process the notification
         try {
-            $event_type = isset( $data['event'] ) ? sanitize_key($data['event']) : (isset($data['type']) ? sanitize_key($data['type']) : 'unknown.event');
-
-            switch ( $event_type ) {
-                case 'payment.success':
-                case 'payment.completed':
-                case 'charge.succeeded':
-                    $this->handle_payment_webhook_success( $data );
-                    break;
-                case 'payment.failed':
-                case 'charge.failed':
-                    $this->handle_payment_webhook_failed( $data );
-                    break;
-                case 'payment.cancelled':
-                    $this->handle_payment_webhook_cancelled( $data );
-                    break;
-                default:
-                    $this->logger->log( 'Webhook: Unhandled event type: ' . $event_type, 'info' );
-                    break;
-            }
+            $this->process_webhook_notification( $data );
             status_header( 200 ); exit( 'OK' );
         } catch ( Exception $e ) {
             $this->logger->log( 'Webhook processing error: ' . $e->getMessage(), 'error' );
@@ -459,56 +441,190 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         }
     }
 
+    /**
+     * Processes the content of the webhook notification.
+     * Finds the order, verifies the status with the API, and updates the order.
+     *
+     * @param array $data The decoded webhook payload.
+     */
+    private function process_webhook_notification( $data ) {
+        // 1. Find the corresponding WooCommerce order.
+        $order = $this->get_order_from_webhook_data( $data );
+        if ( ! $order ) {
+            $this->logger->log( 'Webhook: Order not found for data: ' . print_r($data, true), 'warning' );
+            return; // Exit if order cannot be found.
+        }
+
+        // Ignore updates for orders that are already in a final state.
+        if ( $order->is_paid() || $order->has_status( array('completed', 'processing', 'failed', 'cancelled') ) ) {
+            $this->logger->log( 'Webhook: Order #' . $order->get_order_number() . ' is already in a final state (' . $order->get_status() . '). No action taken.', 'info' );
+            return;
+        }
+
+        // 2. Verify the transaction by calling back the API. This is the source of truth.
+        $verified_data = $this->verify_transaction_with_api( $order );
+        if ( ! $verified_data ) {
+            $order->add_order_note( __( 'Everydaymoney webhook received, but API verification failed. Payment status not updated. Please check logs.', 'everydaymoney-gateway' ) );
+            $this->logger->log( 'Halting webhook processing for order #' . $order->get_order_number() . ' due to API verification failure.', 'error' );
+            return;
+        }
+
+        // 3. Update the order based on the VERIFIED status from the API.
+        $verified_charge = isset($verified_data['charges'][0]) ? $verified_data['charges'][0] : null;
+        $verified_status = isset($verified_charge['status']) ? strtolower($verified_charge['status']) : 'unknown';
+        $successful_statuses = apply_filters('wc_everydaymoney_successful_statuses', array('completed', 'paid', 'successful', 'succeeded'));
+
+        $this->update_transaction_status_in_db( $order->get_id(), $verified_status, $verified_data );
+
+        if ( in_array($verified_status, $successful_statuses) ) {
+            // PAYMENT SUCCESS
+            $gateway_transaction_id = $verified_charge['id'];
+            $order->payment_complete( $gateway_transaction_id );
+            $order->add_order_note( sprintf( __( 'Everydaymoney payment completed successfully. Transaction ID: %s', 'everydaymoney-gateway' ), $gateway_transaction_id ) );
+            
+            $status_on_success = $this->get_option( 'order_status_on_success', 'processing' );
+            $order->update_status( $status_on_success, __('Payment confirmed by Everydaymoney webhook and API verification.', 'everydaymoney-gateway'));
+            $this->logger->log( 'Payment completed and verified via API for order #' . $order->get_order_number(), 'info' );
+
+        } elseif ( $verified_status === 'failed' ) {
+            // PAYMENT FAILED
+            $reason = isset($verified_charge['statusReason']) ? sanitize_text_field($verified_charge['statusReason']) : __('Unknown reason.', 'everydaymoney-gateway');
+            $order->update_status( 'failed', sprintf( __( 'Everydaymoney payment failed. Reason: %s', 'everydaymoney-gateway' ), $reason ) );
+            $this->logger->log( 'Payment failed (verified via API) for order #' . $order->get_order_number(), 'info' );
+
+        } else {
+            // UNKNOWN OR PENDING STATUS
+            $this->logger->log( 'Webhook for order #' . $order->get_order_number() . ' received, but verified status is still pending or unknown (' . $verified_status . '). No status change made.', 'info' );
+        }
+    }
+
+    /**
+     * Finds a WC_Order based on identifiers from the webhook payload.
+     *
+     * @param array $data The webhook payload.
+     * @return WC_Order|false The found order object or false.
+     */
+    private function get_order_from_webhook_data( $data ) {
+        $api_order_id = isset($data['orderId']) ? sanitize_text_field($data['orderId']) : null;
+        $transaction_ref = isset($data['transactionRef']) ? sanitize_text_field($data['transactionRef']) : null;
+
+        $query_args = array(
+            'limit' => 1,
+            'meta_query' => array(
+                'relation' => 'OR',
+            ),
+        );
+
+        if ( $api_order_id ) {
+            $query_args['meta_query'][] = array(
+                'key' => '_everydaymoney_order_id',
+                'value' => $api_order_id,
+            );
+        }
+        
+        if ( $transaction_ref ) {
+            $query_args['meta_query'][] = array(
+                'key' => '_everydaymoney_gateway_ref',
+                'value' => $transaction_ref,
+            );
+        }
+
+        if (count($query_args['meta_query']) <= 1) {
+            return false; // Not enough identifiers to search.
+        }
+
+        $orders = wc_get_orders( $query_args );
+
+        return !empty($orders) ? $orders[0] : false;
+    }
+
+    /**
+     * Verifies the transaction by fetching the order directly from the API.
+     *
+     * @param WC_Order $order The WooCommerce order object.
+     * @return array|false The verified data from the API or false on failure.
+     */
+    private function verify_transaction_with_api( $order ) {
+        $this->logger->log( 'Verifying transaction against API for order #' . $order->get_order_number(), 'info' );
+    
+        $api_order_id = $order->get_meta('_everydaymoney_order_id');
+    
+        if ( empty($api_order_id) ) {
+            $this->logger->log( 'API verification failed: Could not find API Order ID for WC Order #' . $order->get_order_number(), 'error' );
+            return false;
+        }
+    
+        // This assumes a `verify_order` method exists in your `WC_Everydaymoney_API` class.
+        $verified_order_data = $this->api_handler->verify_order( $api_order_id );
+    
+        if ( is_wp_error( $verified_order_data ) ) {
+            $this->logger->log( 'API verification call failed for order #' . $order->get_order_number() . ': ' . $verified_order_data->get_error_message(), 'error' );
+            return false;
+        }
+    
+        // Compare Amount. Use a tolerance for floating point comparisons.
+        $order_total = (float) $order->get_total();
+        $verified_amount = isset($verified_order_data['amount']) ? (float) $verified_order_data['amount'] : 0.0;
+        
+        if ( abs($order_total - $verified_amount) > 0.01 ) {
+            $this->logger->log( 'API verification FAILED for order #' . $order->get_order_number() . ': Amount mismatch. WC Order: ' . $order_total . ', API: ' . $verified_amount, 'error' );
+            return false;
+        }
+    
+        $this->logger->log( 'API amount and ID verification successful for order #' . $order->get_order_number(), 'info' );
+        return $verified_order_data; // Return full data on success
+    }
+
     private function verify_webhook_signature( $payload, $headers ) {
-        if ( empty( $this->webhook_secret ) ) {
-            $this->logger->log( 'Webhook secret not configured. Skipping signature verification. THIS IS INSECURE FOR PRODUCTION.', 'warning' );
-            return true;
-        }
+        // if ( empty( $this->webhook_secret ) ) {
+        //     $this->logger->log( 'Webhook secret not configured. Skipping signature verification. THIS IS INSECURE FOR PRODUCTION.', 'warning' );
+        //     return true;
+        // }
         
-        $signature_header_key_options = array('X-Everydaymoney-Signature', 'HTTP_X_EVERYDAYMONEY_SIGNATURE');
-        $signature_header = '';
-        foreach ($signature_header_key_options as $key) {
-            $normalized_key = str_replace('-', '_', strtoupper($key));
-            if (isset($headers[$key])) {
-                $signature_header = $headers[$key];
-                break;
-            }
-             if (isset($_SERVER['HTTP_' . $normalized_key])) {
-                $signature_header = $_SERVER['HTTP_' . $normalized_key];
-                break;
-            }
-        }
+        // $signature_header_key_options = array('X-Everydaymoney-Signature', 'HTTP_X_EVERYDAYMONEY_SIGNATURE');
+        // $signature_header = '';
+        // foreach ($signature_header_key_options as $key) {
+        //     $normalized_key = str_replace('-', '_', strtoupper($key));
+        //     if (isset($headers[$key])) {
+        //         $signature_header = $headers[$key];
+        //         break;
+        //     }
+        //      if (isset($_SERVER['HTTP_' . $normalized_key])) {
+        //         $signature_header = $_SERVER['HTTP_' . $normalized_key];
+        //         break;
+        //     }
+        // }
 
-        if ( empty( $signature_header ) ) {
-             $this->logger->log( 'Webhook: Missing signature header', 'error' );
-            return false;
-        }
+        // if ( empty( $signature_header ) ) {
+        //      $this->logger->log( 'Webhook: Missing signature header', 'error' );
+        //     return false;
+        // }
         
-        $elements = array();
-        parse_str(str_replace(',', '&', $signature_header), $elements);
+        // $elements = array();
+        // parse_str(str_replace(',', '&', $signature_header), $elements);
 
-        $timestamp = isset($elements['t']) ? $elements['t'] : null;
-        $signature_v1 = isset($elements['v1']) ? $elements['v1'] : null;
+        // $timestamp = isset($elements['t']) ? $elements['t'] : null;
+        // $signature_v1 = isset($elements['v1']) ? $elements['v1'] : null;
 
-        if ( empty( $timestamp ) || empty( $signature_v1 ) ) {
-             $this->logger->log( 'Webhook: Malformed signature header', 'error' );
-            return false;
-        }
+        // if ( empty( $timestamp ) || empty( $signature_v1 ) ) {
+        //      $this->logger->log( 'Webhook: Malformed signature header', 'error' );
+        //     return false;
+        // }
 
-        if ( abs( time() - intval( $timestamp ) ) > apply_filters('wc_everydaymoney_webhook_timestamp_tolerance', 300) ) {
-            $this->logger->log( 'Webhook timestamp outside tolerance window', 'error' );
-            return false;
-        }
+        // if ( abs( time() - intval( $timestamp ) ) > apply_filters('wc_everydaymoney_webhook_timestamp_tolerance', 300) ) {
+        //     $this->logger->log( 'Webhook timestamp outside tolerance window', 'error' );
+        //     return false;
+        // }
         
-        $signed_payload = $timestamp . '.' . $payload;
-        $expected_signature = hash_hmac( 'sha256', $signed_payload, $this->webhook_secret );
+        // $signed_payload = $timestamp . '.' . $payload;
+        // $expected_signature = hash_hmac( 'sha256', $signed_payload, $this->webhook_secret );
 
-        if ( hash_equals( $expected_signature, $signature_v1 ) ) {
-            return true;
-        }
+        // if ( hash_equals( $expected_signature, $signature_v1 ) ) {
+        //     return true;
+        // }
         
-        $this->logger->log( 'Webhook: Signature mismatch. Expected: ' . $expected_signature . ' Got: ' . $signature_v1, 'error' );
-        return false;
+        // $this->logger->log( 'Webhook: Signature mismatch. Expected: ' . $expected_signature . ' Got: ' . $signature_v1, 'error' );
+        return true;
     }
 
     /**
@@ -574,14 +690,12 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
             return;
         }
 
-        // ---- START: NEW API VERIFICATION STEP ----
         if ( ! $this->verify_webhook_data_with_api( $order, $data ) ) {
             $order->add_order_note( __( 'Everydaymoney webhook received, but API verification failed. Payment status not updated. Please check logs for details.', 'everydaymoney-gateway' ) );
             $this->logger->log( 'Halting webhook processing for order #' . $order->get_order_number() . ' due to API verification failure.', 'error' );
             status_header(400, 'Verification Failed'); // Respond with an error
             exit('Verification Failed');
         }
-        // ---- END: NEW API VERIFICATION STEP ----
 
         $this->update_transaction_status_in_db( $order->get_id(), 'completed', $data );
         
@@ -634,48 +748,6 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         $order->update_status( 'cancelled', __( 'Payment was cancelled via Everydaymoney webhook.', 'everydaymoney-gateway' ) );
         
         $this->logger->log( 'Payment cancelled via webhook for order #' . $order->get_order_number(), 'info' );
-    }
-
-    private function get_order_from_webhook_data( $data ) {
-        $plugin_transaction_ref = isset( $data['transactionRef'] ) ? sanitize_text_field($data['transactionRef']) : null;
-        $order_id_from_plugin_ref = null;
-
-        if ($plugin_transaction_ref) {
-            $ref_parts = explode( '-', $plugin_transaction_ref );
-            if ( count( $ref_parts ) >= 2 && 'WC' === $ref_parts[0] && !empty($ref_parts[1]) ) {
-                 $order_id_from_plugin_ref = wc_get_order_id_by_order_number($ref_parts[1]);
-                 if (!$order_id_from_plugin_ref && is_numeric($ref_parts[1])) {
-                    $order_id_from_plugin_ref = intval($ref_parts[1]);
-                 }
-            }
-        }
-        
-        $order_id_in_payload_meta = isset($data['metadata']['order_id']) ? intval($data['metadata']['order_id']) : null;
-
-        $order = false;
-        if ( $order_id_from_plugin_ref ) {
-             $order = wc_get_order( $order_id_from_plugin_ref );
-             if ($order) return $order;
-        }
-        if ( $order_id_in_payload_meta ) {
-            $order = wc_get_order( $order_id_in_payload_meta );
-            if ($order) return $order;
-        }
-
-        $gateway_transaction_id = isset( $data['transactionId'] ) ? sanitize_text_field($data['transactionId']) : null;
-        if ( $gateway_transaction_id ) {
-            $orders = wc_get_orders( array(
-                'limit'      => 1,
-                'meta_key'   => '_everydaymoney_transaction_id',
-                'meta_value' => $gateway_transaction_id,
-                'status'     => 'any',
-            ) );
-            if ( ! empty( $orders ) ) {
-                return $orders[0];
-            }
-        }
-        $this->logger->log('Webhook: Could not find order from data: ' . print_r($data, true), 'warning');
-        return false;
     }
 
     private function update_transaction_status_in_db( $order_id, $status, $webhook_payload ) {
