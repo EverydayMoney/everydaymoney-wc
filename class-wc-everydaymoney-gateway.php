@@ -307,6 +307,12 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         return true; 
     }
 
+    /**
+     * Process the payment and return the result.
+     *
+     * @param int $order_id
+     * @return array
+     */
     public function process_payment( $order_id ) {
         $order = wc_get_order( $order_id );
         if ( ! $order ) {
@@ -318,8 +324,8 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         $this->logger->log( 'Processing payment for order #' . $order->get_order_number() . ' (ID: ' . $order_id . ')', 'info' );
 
         try {
-            $charge_data = $this->prepare_charge_data( $order );
-            $response = $this->api_handler->create_charge( $charge_data );
+            $charge_data_to_send = $this->prepare_charge_data( $order );
+            $response = $this->api_handler->create_charge( $charge_data_to_send );
 
             if ( is_wp_error( $response ) ) {
                 $error_message = $response->get_error_message();
@@ -327,31 +333,48 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
                 wc_add_notice( sprintf(__( 'Payment error: %s Please try again or contact support.', 'everydaymoney-gateway' ), esc_html($error_message) ), 'error' );
                 return array( 'result' => 'failure' );
             }
-            
-            if ( !isset($response['checkoutURL']) || !isset($response['transactionId']) ) {
+
+            // Extract data from the nested response structure provided by the API.
+            $checkout_url           = $response['checkoutURL'] ?? null;
+            $charge_data_from_api   = $response['order']['charges'][0] ?? null;
+            $transaction_id         = $charge_data_from_api['id'] ?? null; // This is the charge ID, e.g., 'chg_...'
+            $api_order_id           = $response['order']['id'] ?? null; // This is the API's order ID, e.g., 'or_...'
+            $transaction_ref        = $charge_data_from_api['transactionRef'] ?? null; // This is our internal reference, e.g., 'WC-74-...'
+
+            // Validate the essential parts of the response.
+            if ( empty($checkout_url) || empty($transaction_id) ) {
                 $this->logger->log( 'Payment API Error for order #' . $order->get_order_number() . ': Invalid response structure from API. Response: ' . print_r($response, true), 'error' );
                 wc_add_notice( __( 'Payment error: Could not retrieve payment details from the provider. Please contact support.', 'everydaymoney-gateway'), 'error' );
                 return array( 'result' => 'failure' );
             }
 
-            $this->save_initial_transaction_data_to_db( $order, $response );
+            // The `save_initial_transaction_data_to_db` function expects `transactionId` and `transactionRef`.
+            // We pass the full original response to be logged, but also add the keys it expects for compatibility.
+            $response_for_db = $response;
+            $response_for_db['transactionId'] = $transaction_id;
+            $response_for_db['transactionRef'] = $transaction_ref;
+            $this->save_initial_transaction_data_to_db( $order, $response_for_db );
 
+            // Update order meta with the correct transaction details.
             $order->update_status( 'pending', __( 'Awaiting payment confirmation from Everydaymoney.', 'everydaymoney-gateway' ) );
-            $order->update_meta_data( '_everydaymoney_transaction_id', sanitize_text_field($response['transactionId']) );
-            if (isset($response['transactionRef'])) { 
-                 $order->update_meta_data( '_everydaymoney_gateway_ref', sanitize_text_field($response['transactionRef']) );
+            $order->update_meta_data( '_everydaymoney_transaction_id', sanitize_text_field( $transaction_id ) );
+            $order->update_meta_data( '_everydaymoney_order_id', sanitize_text_field( $api_order_id ) ); // Store API's order ID for reconciliation.
+            if ($transaction_ref) { 
+                 $order->update_meta_data( '_everydaymoney_gateway_ref', sanitize_text_field( $transaction_ref ) );
             }
             $order->save();
             
             wc_reduce_stock_levels( $order_id );
             WC()->cart->empty_cart();
             
-            $this->logger->log( 'Payment initiated for order #' . $order->get_order_number() . '. Redirecting to: ' . $response['checkoutURL'], 'info' );
+            $this->logger->log( 'Payment initiated for order #' . $order->get_order_number() . '. Redirecting to: ' . $checkout_url, 'info' );
             
             return array(
                 'result'   => 'success',
-                'redirect' => esc_url_raw($response['checkoutURL']),
+                'redirect' => esc_url_raw($checkout_url),
             );
+
+            // ---- END: MODIFIED CODE ----
             
         } catch ( Exception $e ) {
             $this->logger->log( 'Payment Exception for order #' . $order->get_order_number() . ': ' . $e->getMessage(), 'error' );
