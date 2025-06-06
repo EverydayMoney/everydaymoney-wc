@@ -3,7 +3,7 @@
  * Plugin Name:       Everydaymoney Payment Gateway
  * Plugin URI:        https://everydaymoney.app.com/integrations
  * Description:       Integrates Everydaymoney Payment Gateway with WooCommerce for basic payments.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Author:            EverydayMoney SAS
  * Author URI:        https://everydaymoney.app
  * License:           GPL-2.0+
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'EVERYDAYMONEY_GATEWAY_PLUGIN_FILE', __FILE__ );
 define( 'EVERYDAYMONEY_GATEWAY_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'EVERYDAYMONEY_GATEWAY_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'EVERYDAYMONEY_GATEWAY_VERSION', '1.2.0' ); // Version bump
+define( 'EVERYDAYMONEY_GATEWAY_VERSION', '1.3.0' );
 define( 'EVERYDAYMONEY_GATEWAY_API_URL', 'https://em-api-prod.everydaymoney.app' );
 define( 'EVERYDAYMONEY_GATEWAY_TEST_API_URL', 'https://em-api-staging.everydaymoney.app' );
 
@@ -50,6 +50,23 @@ function everydaymoney_gateway_init() {
         }
     } );
 
+    // *** NEW: REGISTER THE BLOCKS INTEGRATION ***
+    if ( class_exists( 'Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry' ) ) {
+        add_action(
+            'woocommerce_blocks_payment_method_type_registration',
+            function( Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry $payment_method_registry ) {
+                $includes_dir = EVERYDAYMONEY_GATEWAY_PLUGIN_DIR . 'includes/';
+                $integration_file = $includes_dir . 'class-wc-everydaymoney-blocks-integration.php';
+                if ( file_exists( $integration_file ) ) {
+                    require_once $integration_file;
+                    $payment_method_registry->register(
+                        new WC_Everydaymoney_Blocks_Integration()
+                    );
+                }
+            }
+        );
+    }
+
     // Register the AJAX handler for the API test connection button
     add_action( 'wp_ajax_everydaymoney_test_connection', 'everydaymoney_ajax_test_connection' );
 }
@@ -66,12 +83,10 @@ function everydaymoney_add_gateway_class( $gateways ) {
     // Ensure the includes directory exists before trying to include files from it.
     $includes_dir = EVERYDAYMONEY_GATEWAY_PLUGIN_DIR . 'includes/';
     if ( ! is_dir( $includes_dir ) ) {
-        // Optional: Add an admin notice if the includes directory is missing.
         return $gateways;
     }
 
     // Include all necessary class files right before they are needed.
-    // The order is important: dependencies (like Logger) must be loaded first.
     $logger_file = $includes_dir . 'class-wc-everydaymoney-logger.php';
     if ( file_exists( $logger_file ) ) {
         require_once $logger_file;
@@ -87,8 +102,6 @@ function everydaymoney_add_gateway_class( $gateways ) {
         require_once $gateway_file;
     }
 
-    // Now that we're sure the class file is included (if it exists), add it to the list.
-    // The class_exists check here is a final safeguard.
     if ( class_exists( 'WC_Everydaymoney_Gateway' ) ) {
         $gateways[] = 'WC_Everydaymoney_Gateway';
     }
