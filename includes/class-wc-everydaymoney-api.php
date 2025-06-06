@@ -73,27 +73,18 @@ class WC_Everydaymoney_API {
         $this->logger->log( 'JWT Auth Response Code: ' . $http_code, 'debug' );
         $this->logger->log( 'JWT Auth Response Body: ' . $body, 'debug' );
 
-        // Check if 'result' exists, is a non-empty string (the JWT itself)
         if ( ($http_code === 200 || $http_code === 201) && 
              isset( $parsed_body['isError'] ) && false === $parsed_body['isError'] && 
              isset( $parsed_body['result'] ) && is_string( $parsed_body['result'] ) && !empty( $parsed_body['result'] ) ) {
             
-            $jwt_token = $parsed_body['result']; // The token is directly in 'result'
-
-            // Regarding 'expiresIn':
-            // Your provided JSON example doesn't show an 'expiresIn' field.
-            // If your API no longer sends 'expiresIn' with this token response structure,
-            // we'll use a default. If it's sent elsewhere, adjust accordingly.
-            $expires_in = 3500; // Default to ~58 minutes if not provided by API.
-                                // You might decode the JWT to get its actual 'exp' claim for a more accurate expiry.
+            $jwt_token = $parsed_body['result'];
+            $expires_in = 3500;
             
-            set_transient( $transient_key, $jwt_token, max(60, $expires_in - 100) ); // Cache for at least 60s
+            set_transient( $transient_key, $jwt_token, max(60, $expires_in - 100) );
             $this->logger->log( 'Successfully obtained and cached JWT token. Expires in (defaulted or from API): ' . $expires_in . 's', 'info' );
             return $jwt_token;
         } else {
-            // This block will now only be executed for actual errors or unexpected successful structures.
             $error_message = $this->extract_error_message($parsed_body);
-            // Check if it was a success code but still failed parsing, to log a more specific internal error
             if (($http_code === 200 || $http_code === 201) && (isset( $parsed_body['isError'] ) && false === $parsed_body['isError'] )) {
                  $this->logger->log( 'JWT Auth Succeeded (HTTP ' . $http_code . ') but failed to parse token from response structure. Body: ' . $body, 'error' );
             } else {
@@ -106,6 +97,7 @@ class WC_Everydaymoney_API {
     private function make_api_request( $endpoint, $data = array(), $method = 'POST' ) {
         $jwt_token = $this->get_jwt_token();
         if ( ! $jwt_token ) {
+            $this->logger->log( 'API Request Failed: Could not obtain JWT token', 'error' );
             return new WP_Error( 'auth_failed', __( 'Authentication failed. Could not retrieve JWT token.', 'everydaymoney-gateway' ) );
         }
 
@@ -127,9 +119,9 @@ class WC_Everydaymoney_API {
             $url = add_query_arg( $data, $url );
         }
         
-        $this->logger->log( 'API Request (' . $args['method'] . '): ' . $url, 'debug' );
+        $this->logger->log( 'API Request (' . $args['method'] . '): ' . $url, 'info' );
         if ('POST' === $args['method'] || 'PUT' === $args['method']) {
-             $this->logger->log( 'API Request Body: ' . (is_array($args['body']) || is_object($args['body']) ? wp_json_encode($args['body']) : $args['body']), 'debug' );
+            $this->logger->log( 'API Request Body: ' . $args['body'], 'info' );
         }
 
         $response = wp_remote_request( $url, $args );
@@ -143,31 +135,67 @@ class WC_Everydaymoney_API {
         $body        = wp_remote_retrieve_body( $response );
         $parsed_body = json_decode( $body, true );
 
-        $this->logger->log( 'API Response Code (' . $endpoint . '): ' . $http_code, 'debug' );
-        $this->logger->log( 'API Response Body (' . $endpoint . '): ' . $body, 'debug' );
+        $this->logger->log( 'API Response Code (' . $endpoint . '): ' . $http_code, 'info' );
+        $this->logger->log( 'API Response Body (' . $endpoint . '): ' . $body, 'info' );
 
         if ( ($http_code >= 200 && $http_code < 300) && isset( $parsed_body['isError'] ) && false === $parsed_body['isError'] && isset( $parsed_body['result'] ) ) {
             return $parsed_body['result'];
         } else {
             $error_message = $this->extract_error_message($parsed_body);
-            $this->logger->log( 'API Error (' . $endpoint . '). Code: ' . $http_code . ' Message: ' . esc_html( $error_message ), 'error' );
+            
+            // Log the full error details for debugging
+            $this->logger->log( 'API Error Details (' . $endpoint . '):', 'error' );
+            $this->logger->log( '  HTTP Code: ' . $http_code, 'error' );
+            $this->logger->log( '  Error Message: ' . $error_message, 'error' );
+            $this->logger->log( '  Full Response: ' . print_r($parsed_body, true), 'error' );
+            
+            // Check if it's an InternalError
+            if (strpos($error_message, 'InternalError') !== false) {
+                $this->logger->log( 'InternalError detected. This usually indicates a problem with the request data format or missing required fields.', 'error' );
+            }
+            
             return new WP_Error( 'api_error', esc_html( $error_message ), array( 'status' => $http_code, 'response_body' => $parsed_body ) );
         }
     }
 
     private function extract_error_message($parsed_body) {
         $error_message = __( 'An unknown API error occurred.', 'everydaymoney-gateway' );
+        
+        // Check various possible error message locations
         if ( isset( $parsed_body['result']['message'] ) ) {
             $error_message = is_array( $parsed_body['result']['message'] ) ? implode( ', ', $parsed_body['result']['message'] ) : $parsed_body['result']['message'];
         } elseif ( isset( $parsed_body['message'] ) ) {
             $error_message = is_array( $parsed_body['message'] ) ? implode( ', ', $parsed_body['message'] ) : $parsed_body['message'];
-        }  elseif (isset($parsed_body['error'])) {
-             $error_message = is_array($parsed_body['error']) ? implode( ', ', $parsed_body['error']) : $parsed_body['error'];
+        } elseif (isset($parsed_body['error'])) {
+            $error_message = is_array($parsed_body['error']) ? implode( ', ', $parsed_body['error']) : $parsed_body['error'];
+        } elseif (isset($parsed_body['result']) && is_string($parsed_body['result'])) {
+            // Sometimes the error is just a string in the result field
+            $error_message = $parsed_body['result'];
         }
+        
         return $error_message;
     }
 
     public function create_charge( $charge_data ) {
+        $this->logger->log( '=== Creating Charge Request ===', 'info' );
+        $this->logger->log( 'Charge Data: ' . print_r($charge_data, true), 'info' );
+        
+        // Validate required fields before sending
+        $required_fields = array('currency', 'email', 'orderLines');
+        foreach ($required_fields as $field) {
+            if (empty($charge_data[$field])) {
+                $this->logger->log( 'Missing required field: ' . $field, 'error' );
+                return new WP_Error( 'missing_field', sprintf( __( 'Missing required field: %s', 'everydaymoney-gateway' ), $field ) );
+            }
+        }
+        
+        // Calculate total from order lines
+        $total = 0;
+        foreach ($charge_data['orderLines'] as $line) {
+            $total += $line['amount'] * $line['quantity'];
+        }
+        $this->logger->log( 'Calculated total from order lines: ' . $total, 'info' );
+        
         return $this->make_api_request( '/payment/checkout/api-charge-order', $charge_data, 'POST' );
     }
     
