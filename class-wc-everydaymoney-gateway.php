@@ -455,13 +455,20 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Get the payment method icon URL.
-     *
+     * Get gateway icon.
+     * 
      * @return string
      */
     public function get_icon() {
-        $icon = $this->icon ? $this->icon : '';
-        return apply_filters( 'woocommerce_gateway_icon', $icon, $this->id );
+        $icon_url = $this->icon;
+        
+        // If no icon is set, return empty string
+        if ( empty( $icon_url ) ) {
+            return '';
+        }
+        
+        // Return just the URL for blocks integration
+        return $icon_url;
     }
 
     public function format_amount_for_api( $amount, $currency ) {
