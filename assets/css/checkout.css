@@ -1,65 +1,37 @@
-/* Everydaymoney payment method - WooCommerce Admin style */
+/* Everydaymoney payment method styling - Bigger icon on right */
 .wc-block-components-radio-control__option .wc-block-components-payment-method-label {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     width: 100%;
-    gap: 16px;
-}
-
-/* Icon on the left, larger size */
-.wc-block-components-payment-method-label__icon {
-    height: 48px;
-    width: auto;
-    min-width: 48px;
-    max-width: 140px;
-    object-fit: contain;
-    order: -1; /* This moves the icon to the left */
-    margin-left: 0;
-    margin-right: 0;
+    gap: 12px;
 }
 
 .wc-block-components-payment-method-label__text {
     flex-grow: 1;
-    font-weight: 600;
-    color: #1e1e1e;
+    font-weight: 500;
+    color: #2c3338;
     font-size: 16px;
-    line-height: 1.4;
 }
 
-/* Remove grayscale effect for a cleaner look */
-.wc-block-components-radio-control__option .wc-block-components-payment-method-label__icon {
-    opacity: 1;
-    transition: transform 0.2s ease;
+.wc-block-components-payment-method-label__icon {
+    height: 48px; /* Increased from 24px */
+    width: auto;
+    max-width: 140px; /* Increased from 80px */
+    object-fit: contain;
+    margin-left: auto;
+    opacity: 0.9;
+    transition: opacity 0.2s ease;
 }
 
-/* Subtle hover effect */
+/* Hover effect for the icon */
 .wc-block-components-radio-control__option:hover .wc-block-components-payment-method-label__icon {
-    transform: scale(1.05);
+    opacity: 1;
 }
 
-/* Selected state */
-.wc-block-components-radio-control__option.is-selected .wc-block-components-payment-method-label {
-    font-weight: 600;
-}
-
-/* Container styling */
-.wc-block-components-radio-control__option {
-    padding: 16px;
-    border: 1px solid #dcdcde;
-    border-radius: 4px;
-    margin-bottom: 12px;
-    background-color: #fff;
-    transition: all 0.2s ease;
-}
-
-.wc-block-components-radio-control__option:hover {
-    border-color: #949494;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.wc-block-components-radio-control__option.is-selected {
-    border-color: #007cba;
-    box-shadow: 0 0 0 1px #007cba;
+/* When the payment method is selected */
+.wc-block-components-radio-control__option.is-selected .wc-block-components-payment-method-label__icon {
+    opacity: 1;
 }
 
 /* Ensure the radio button and label are properly aligned */
@@ -68,64 +40,29 @@
     align-items: center;
     width: 100%;
     cursor: pointer;
-    margin: 0;
+    padding: 8px 0; /* Add some vertical padding */
 }
 
-/* Description text styling */
-.wc-block-components-payment-method-content {
-    color: #50575e;
-    font-size: 14px;
-    line-height: 1.5;
+/* Additional styling for the payment method content/description */
+.wc-block-components-payment-method-icons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 8px;
-    margin-left: 64px; /* Align with text when icon is on left */
-}
-
-/* Test mode badge */
-.wc-block-components-payment-method-label__test-mode {
-    background-color: #f0b849;
-    color: #1e1e1e;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    padding: 2px 8px;
-    border-radius: 2px;
-    margin-left: 8px;
 }
 
 /* Responsive design for tablets */
 @media (max-width: 768px) {
     .wc-block-components-payment-method-label__icon {
-        height: 40px;
-        min-width: 40px;
+        height: 40px; /* Slightly smaller on tablets */
         max-width: 120px;
-    }
-    
-    .wc-block-components-radio-control__option {
-        padding: 12px;
-    }
-    
-    .wc-block-components-payment-method-content {
-        margin-left: 56px;
     }
 }
 
 /* Responsive design for mobile */
 @media (max-width: 480px) {
     .wc-block-components-payment-method-label__icon {
-        height: 36px;
-        min-width: 36px;
-        max-width: 100px;
-    }
-    
-    .wc-block-components-payment-method-label__text {
-        font-size: 15px;
-    }
-    
-    .wc-block-components-radio-control__option {
-        padding: 10px;
-    }
-    
-    .wc-block-components-payment-method-content {
-        margin-left: 52px;
+        height: 32px; /* Increased from 20px */
+        max-width: 100px; /* Increased from 60px */
     }
 }
