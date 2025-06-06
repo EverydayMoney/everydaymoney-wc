@@ -361,71 +361,97 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
     }
 
     private function prepare_charge_data( $order ) {
+        $this->logger->log( '=== Preparing charge data for order #' . $order->get_order_number() . ' ===', 'info' );
+        
         $order_lines = array();
         
+        // Process order items
         foreach ( $order->get_items() as $item_id => $item ) {
             $product = $item->get_product();
             $price_per_unit = ($item->get_quantity() > 0) ? $order->get_line_subtotal( $item, false, false ) / $item->get_quantity() : 0;
             
             $line_data = array(
-                'itemName'  => $item->get_name(),
-                'quantity'  => $item->get_quantity(),
+                'itemName'  => substr($item->get_name(), 0, 255), // Limit length
+                'quantity'  => (int) $item->get_quantity(),
                 'amount'    => $this->format_amount_for_api( $price_per_unit, $order->get_currency() ),
-                'itemCode'  => $product ? $product->get_sku() : '',
+                'itemCode'  => $product ? substr($product->get_sku() ?: 'ITEM-' . $item_id, 0, 50) : 'ITEM-' . $item_id,
             );
+            
             if ( $product ) {
-                $line_data['productId'] = $product->get_id();
+                $line_data['productId'] = (string) $product->get_id();
             }
+            
+            $this->logger->log( 'Order line: ' . print_r($line_data, true), 'debug' );
             $order_lines[] = $line_data;
         }
 
+        // Add shipping if present
         if ( $order->get_shipping_total() > 0 ) {
-            $order_lines[] = array(
-                'itemName' => sprintf( __( 'Shipping: %s', 'everydaymoney-gateway' ), $order->get_shipping_method() ),
+            $shipping_line = array(
+                'itemName' => substr(sprintf( __( 'Shipping: %s', 'everydaymoney-gateway' ), $order->get_shipping_method() ), 0, 255),
                 'quantity' => 1,
                 'amount'   => $this->format_amount_for_api( $order->get_shipping_total(), $order->get_currency() ),
                 'itemCode' => 'SHIPPING',
             );
+            $this->logger->log( 'Shipping line: ' . print_r($shipping_line, true), 'debug' );
+            $order_lines[] = $shipping_line;
         }
 
+        // Add fees
         foreach ( $order->get_fees() as $fee_id => $fee ) {
-            $order_lines[] = array(
-                'itemName' => $fee->get_name(),
+            $fee_line = array(
+                'itemName' => substr($fee->get_name(), 0, 255),
                 'quantity' => 1,
                 'amount'   => $this->format_amount_for_api( $fee->get_total(), $order->get_currency() ),
-                'itemCode' => 'FEE-' . sanitize_key($fee_id),
+                'itemCode' => 'FEE-' . substr(sanitize_key($fee_id), 0, 45),
             );
+            $this->logger->log( 'Fee line: ' . print_r($fee_line, true), 'debug' );
+            $order_lines[] = $fee_line;
         }
         
+        // Add tax if not included in prices
         if ( $order->get_total_tax() > 0 && ! wc_prices_include_tax() ) {
-            $order_lines[] = array(
+            $tax_line = array(
                 'itemName' => __( 'Tax', 'everydaymoney-gateway' ),
                 'quantity' => 1,
                 'amount'   => $this->format_amount_for_api( $order->get_total_tax(), $order->get_currency() ),
                 'itemCode' => 'TAX',
             );
+            $this->logger->log( 'Tax line: ' . print_r($tax_line, true), 'debug' );
+            $order_lines[] = $tax_line;
         }
 
+        // Prepare customer data
+        $customer_email = $order->get_billing_email();
+        $customer_phone = $order->get_billing_phone();
+        $customer_name = trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() );
+        
+        // Fallback for empty customer name
+        if (empty($customer_name)) {
+            $customer_name = $customer_email ?: 'Guest Customer';
+        }
+        
         $customer_data = array(
-            'email'        => $order->get_billing_email(),
-            'phone'        => $order->get_billing_phone(),
-            'customerName' => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
+            'email'        => $customer_email ?: '',
+            'phone'        => $customer_phone ?: '',
+            'customerName' => $customer_name,
             'customerKey'  => $this->generate_customer_key( $order ),
             'address'      => array(
-                'line1'       => $order->get_billing_address_1(),
-                'line2'       => $order->get_billing_address_2(),
-                'city'        => $order->get_billing_city(),
-                'state'       => $order->get_billing_state(),
-                'postalCode'  => $order->get_billing_postcode(),
-                'country'     => $order->get_billing_country(),
+                'line1'       => $order->get_billing_address_1() ?: '',
+                'line2'       => $order->get_billing_address_2() ?: '',
+                'city'        => $order->get_billing_city() ?: '',
+                'state'       => $order->get_billing_state() ?: '',
+                'postalCode'  => $order->get_billing_postcode() ?: '',
+                'country'     => $order->get_billing_country() ?: '',
             ),
         );
 
+        // Build the charge data
         $charge_data = array(
             'currency'       => $order->get_currency(),
-            'email'          => $customer_data['email'],
-            'phone'          => $customer_data['phone'],
-            'customerName'   => $customer_data['customerName'],
+            'email'          => $customer_email,
+            'phone'          => $customer_phone ?: '',
+            'customerName'   => $customer_name,
             'customerKey'    => $customer_data['customerKey'],
             'narration'      => $this->generate_order_description( $order ),
             'transactionRef' => $this->generate_internal_transaction_ref( $order ),
@@ -434,25 +460,141 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
             'webhookUrl'     => WC()->api_request_url( 'wc_everydaymoney_gateway' ),
             'orderLines'     => $order_lines,
             'metadata'       => array(
-                'order_id'     => $order->get_id(),
-                'order_number' => $order->get_order_number(),
+                'order_id'     => (string) $order->get_id(),
+                'order_number' => (string) $order->get_order_number(),
                 'store_url'    => get_site_url(),
                 'store_name'   => get_bloginfo( 'name' ),
                 'wc_version'   => WC()->version,
                 'plugin_version' => EVERYDAYMONEY_GATEWAY_VERSION,
             ),
             'customer'       => $customer_data,
-            'testMode'       => $this->test_mode,
+            'testMode'       => (bool) $this->test_mode,
         );
         
+        // Add capture flag
         if ( 'authorize' === $this->get_option( 'payment_action' ) ) {
-             $charge_data['capture'] = false;
+            $charge_data['capture'] = false;
         } else {
-             $charge_data['capture'] = true;
+            $charge_data['capture'] = true;
         }
+        
+        // Log the complete charge data
+        $this->logger->log( 'Complete charge data prepared: ' . print_r($charge_data, true), 'info' );
+        
+        // Validate critical fields
+        if (empty($charge_data['email'])) {
+            $this->logger->log( 'WARNING: Email is empty!', 'error' );
+        }
+        
+        if (empty($charge_data['orderLines'])) {
+            $this->logger->log( 'WARNING: No order lines found!', 'error' );
+        }
+        
+        // Calculate and log total
+        $calculated_total = 0;
+        foreach ($charge_data['orderLines'] as $line) {
+            $line_total = $line['amount'] * $line['quantity'];
+            $calculated_total += $line_total;
+            $this->logger->log( 'Line "' . $line['itemName'] . '": ' . $line['quantity'] . ' x ' . $line['amount'] . ' = ' . $line_total, 'debug' );
+        }
+        $this->logger->log( 'Calculated total: ' . $calculated_total . ' (Order total: ' . $order->get_total() . ')', 'info' );
         
         return apply_filters( 'wc_everydaymoney_charge_data', $charge_data, $order );
     }
+
+    // private function prepare_charge_data( $order ) {
+    //     $order_lines = array();
+        
+    //     foreach ( $order->get_items() as $item_id => $item ) {
+    //         $product = $item->get_product();
+    //         $price_per_unit = ($item->get_quantity() > 0) ? $order->get_line_subtotal( $item, false, false ) / $item->get_quantity() : 0;
+            
+    //         $line_data = array(
+    //             'itemName'  => $item->get_name(),
+    //             'quantity'  => $item->get_quantity(),
+    //             'amount'    => $this->format_amount_for_api( $price_per_unit, $order->get_currency() ),
+    //             'itemCode'  => $product ? $product->get_sku() : '',
+    //         );
+    //         if ( $product ) {
+    //             $line_data['productId'] = $product->get_id();
+    //         }
+    //         $order_lines[] = $line_data;
+    //     }
+
+    //     if ( $order->get_shipping_total() > 0 ) {
+    //         $order_lines[] = array(
+    //             'itemName' => sprintf( __( 'Shipping: %s', 'everydaymoney-gateway' ), $order->get_shipping_method() ),
+    //             'quantity' => 1,
+    //             'amount'   => $this->format_amount_for_api( $order->get_shipping_total(), $order->get_currency() ),
+    //             'itemCode' => 'SHIPPING',
+    //         );
+    //     }
+
+    //     foreach ( $order->get_fees() as $fee_id => $fee ) {
+    //         $order_lines[] = array(
+    //             'itemName' => $fee->get_name(),
+    //             'quantity' => 1,
+    //             'amount'   => $this->format_amount_for_api( $fee->get_total(), $order->get_currency() ),
+    //             'itemCode' => 'FEE-' . sanitize_key($fee_id),
+    //         );
+    //     }
+        
+    //     if ( $order->get_total_tax() > 0 && ! wc_prices_include_tax() ) {
+    //         $order_lines[] = array(
+    //             'itemName' => __( 'Tax', 'everydaymoney-gateway' ),
+    //             'quantity' => 1,
+    //             'amount'   => $this->format_amount_for_api( $order->get_total_tax(), $order->get_currency() ),
+    //             'itemCode' => 'TAX',
+    //         );
+    //     }
+
+    //     $customer_data = array(
+    //         'email'        => $order->get_billing_email(),
+    //         'phone'        => $order->get_billing_phone(),
+    //         'customerName' => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
+    //         'customerKey'  => $this->generate_customer_key( $order ),
+    //         'address'      => array(
+    //             'line1'       => $order->get_billing_address_1(),
+    //             'line2'       => $order->get_billing_address_2(),
+    //             'city'        => $order->get_billing_city(),
+    //             'state'       => $order->get_billing_state(),
+    //             'postalCode'  => $order->get_billing_postcode(),
+    //             'country'     => $order->get_billing_country(),
+    //         ),
+    //     );
+
+    //     $charge_data = array(
+    //         'currency'       => $order->get_currency(),
+    //         'email'          => $customer_data['email'],
+    //         'phone'          => $customer_data['phone'],
+    //         'customerName'   => $customer_data['customerName'],
+    //         'customerKey'    => $customer_data['customerKey'],
+    //         'narration'      => $this->generate_order_description( $order ),
+    //         'transactionRef' => $this->generate_internal_transaction_ref( $order ),
+    //         'referenceKey'   => $order->get_order_key(),
+    //         'redirectUrl'    => $this->get_return_url( $order ),
+    //         'webhookUrl'     => WC()->api_request_url( 'wc_everydaymoney_gateway' ),
+    //         'orderLines'     => $order_lines,
+    //         'metadata'       => array(
+    //             'order_id'     => $order->get_id(),
+    //             'order_number' => $order->get_order_number(),
+    //             'store_url'    => get_site_url(),
+    //             'store_name'   => get_bloginfo( 'name' ),
+    //             'wc_version'   => WC()->version,
+    //             'plugin_version' => EVERYDAYMONEY_GATEWAY_VERSION,
+    //         ),
+    //         'customer'       => $customer_data,
+    //         'testMode'       => $this->test_mode,
+    //     );
+        
+    //     if ( 'authorize' === $this->get_option( 'payment_action' ) ) {
+    //          $charge_data['capture'] = false;
+    //     } else {
+    //          $charge_data['capture'] = true;
+    //     }
+        
+    //     return apply_filters( 'wc_everydaymoney_charge_data', $charge_data, $order );
+    // }
 
     /**
      * Get gateway icon.
