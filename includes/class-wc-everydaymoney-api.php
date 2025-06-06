@@ -30,6 +30,24 @@ class WC_Everydaymoney_API {
         }
     }
 
+    /**
+     * Verify an order by fetching it directly from the API
+     *
+     * @param string $api_order_id The order ID from the API
+     * @return array|WP_Error The order data from API or WP_Error on failure
+     */
+    public function verify_order( $api_order_id ) {
+        $this->logger->log( 'Verifying order with API Order ID: ' . $api_order_id, 'info' );
+        
+        if ( empty( $api_order_id ) ) {
+            $this->logger->log( 'Verify Order: Missing API Order ID', 'error' );
+            return new WP_Error( 'missing_order_id', __( 'API Order ID is required for verification.', 'everydaymoney-gateway' ) );
+        }
+        
+        $endpoint = '/business/order/' . sanitize_text_field( $api_order_id );
+        return $this->make_api_request( $endpoint, array(), 'GET' );
+    }
+
     private function get_jwt_token() {
         $transient_key = 'everydaymoney_token_' . md5( $this->gateway->public_key );
         $cached_token = get_transient( $transient_key );

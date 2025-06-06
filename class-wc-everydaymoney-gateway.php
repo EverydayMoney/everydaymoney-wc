@@ -507,6 +507,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
     private function get_order_from_webhook_data( $data ) {
         $api_order_id = isset($data['orderId']) ? sanitize_text_field($data['orderId']) : null;
         $transaction_ref = isset($data['transactionRef']) ? sanitize_text_field($data['transactionRef']) : null;
+        $transaction_id = isset($data['transactionId']) ? sanitize_text_field($data['transactionId']) : null;
 
         $query_args = array(
             'limit' => 1,
@@ -515,6 +516,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
             ),
         );
 
+        // Try to find by API order ID first (most reliable)
         if ( $api_order_id ) {
             $query_args['meta_query'][] = array(
                 'key' => '_everydaymoney_order_id',
@@ -522,20 +524,36 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
             );
         }
         
+        // Then by transaction reference
         if ( $transaction_ref ) {
             $query_args['meta_query'][] = array(
                 'key' => '_everydaymoney_gateway_ref',
                 'value' => $transaction_ref,
             );
         }
+        
+        // Finally by transaction ID
+        if ( $transaction_id ) {
+            $query_args['meta_query'][] = array(
+                'key' => '_everydaymoney_transaction_id',
+                'value' => $transaction_id,
+            );
+        }
 
         if (count($query_args['meta_query']) <= 1) {
-            return false; // Not enough identifiers to search.
+            $this->logger->log( 'Webhook: Not enough identifiers to search for order. Data: ' . print_r($data, true), 'error' );
+            return false;
         }
 
         $orders = wc_get_orders( $query_args );
 
-        return !empty($orders) ? $orders[0] : false;
+        if ( !empty($orders) ) {
+            $this->logger->log( 'Webhook: Found order #' . $orders[0]->get_order_number() . ' for webhook data', 'info' );
+            return $orders[0];
+        }
+        
+        $this->logger->log( 'Webhook: No order found for webhook data: ' . print_r($data, true), 'warning' );
+        return false;
     }
 
     /**
@@ -576,56 +594,58 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
     }
 
     private function verify_webhook_signature( $payload, $headers ) {
-        // if ( empty( $this->webhook_secret ) ) {
-        //     $this->logger->log( 'Webhook secret not configured. Skipping signature verification. THIS IS INSECURE FOR PRODUCTION.', 'warning' );
-        //     return true;
-        // }
+        if ( empty( $this->webhook_secret ) ) {
+            $this->logger->log( 'Webhook secret not configured. Skipping signature verification. THIS IS INSECURE FOR PRODUCTION.', 'warning' );
+            return true; // Allow processing but warn
+        }
         
-        // $signature_header_key_options = array('X-Everydaymoney-Signature', 'HTTP_X_EVERYDAYMONEY_SIGNATURE');
-        // $signature_header = '';
-        // foreach ($signature_header_key_options as $key) {
-        //     $normalized_key = str_replace('-', '_', strtoupper($key));
-        //     if (isset($headers[$key])) {
-        //         $signature_header = $headers[$key];
-        //         break;
-        //     }
-        //      if (isset($_SERVER['HTTP_' . $normalized_key])) {
-        //         $signature_header = $_SERVER['HTTP_' . $normalized_key];
-        //         break;
-        //     }
-        // }
-
-        // if ( empty( $signature_header ) ) {
-        //      $this->logger->log( 'Webhook: Missing signature header', 'error' );
-        //     return false;
-        // }
+        $signature_header_key_options = array('X-Everydaymoney-Signature', 'HTTP_X_EVERYDAYMONEY_SIGNATURE');
+        $signature_header = '';
         
-        // $elements = array();
-        // parse_str(str_replace(',', '&', $signature_header), $elements);
+        foreach ($signature_header_key_options as $key) {
+            $normalized_key = str_replace('-', '_', strtoupper($key));
+            if (isset($headers[$key])) {
+                $signature_header = $headers[$key];
+                break;
+            }
+            if (isset($_SERVER['HTTP_' . $normalized_key])) {
+                $signature_header = $_SERVER['HTTP_' . $normalized_key];
+                break;
+            }
+        }
 
-        // $timestamp = isset($elements['t']) ? $elements['t'] : null;
-        // $signature_v1 = isset($elements['v1']) ? $elements['v1'] : null;
-
-        // if ( empty( $timestamp ) || empty( $signature_v1 ) ) {
-        //      $this->logger->log( 'Webhook: Malformed signature header', 'error' );
-        //     return false;
-        // }
-
-        // if ( abs( time() - intval( $timestamp ) ) > apply_filters('wc_everydaymoney_webhook_timestamp_tolerance', 300) ) {
-        //     $this->logger->log( 'Webhook timestamp outside tolerance window', 'error' );
-        //     return false;
-        // }
+        if ( empty( $signature_header ) ) {
+            $this->logger->log( 'Webhook: Missing signature header', 'error' );
+            return false;
+        }
         
-        // $signed_payload = $timestamp . '.' . $payload;
-        // $expected_signature = hash_hmac( 'sha256', $signed_payload, $this->webhook_secret );
+        $elements = array();
+        parse_str(str_replace(',', '&', $signature_header), $elements);
 
-        // if ( hash_equals( $expected_signature, $signature_v1 ) ) {
-        //     return true;
-        // }
+        $timestamp = isset($elements['t']) ? $elements['t'] : null;
+        $signature_v1 = isset($elements['v1']) ? $elements['v1'] : null;
+
+        if ( empty( $timestamp ) || empty( $signature_v1 ) ) {
+            $this->logger->log( 'Webhook: Malformed signature header', 'error' );
+            return false;
+        }
+
+        if ( abs( time() - intval( $timestamp ) ) > apply_filters('wc_everydaymoney_webhook_timestamp_tolerance', 300) ) {
+            $this->logger->log( 'Webhook timestamp outside tolerance window', 'error' );
+            return false;
+        }
         
-        // $this->logger->log( 'Webhook: Signature mismatch. Expected: ' . $expected_signature . ' Got: ' . $signature_v1, 'error' );
-        return true;
+        $signed_payload = $timestamp . '.' . $payload;
+        $expected_signature = hash_hmac( 'sha256', $signed_payload, $this->webhook_secret );
+
+        if ( hash_equals( $expected_signature, $signature_v1 ) ) {
+            return true;
+        }
+        
+        $this->logger->log( 'Webhook: Signature mismatch. Expected: ' . $expected_signature . ' Got: ' . $signature_v1, 'error' );
+        return false;
     }
+
 
     /**
      * Verifies the webhook data by fetching the order directly from the API.
