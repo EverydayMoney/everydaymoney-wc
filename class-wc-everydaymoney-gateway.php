@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @class       WC_Everydaymoney_Gateway
  * @extends     WC_Payment_Gateway
- * @version     1.2.0
+ * @version     1.0.1
  */
 class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
 
@@ -452,6 +452,16 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         }
         
         return apply_filters( 'wc_everydaymoney_charge_data', $charge_data, $order );
+    }
+
+    /**
+     * Get the payment method icon URL.
+     *
+     * @return string
+     */
+    public function get_icon() {
+        $icon = $this->icon ? $this->icon : '';
+        return apply_filters( 'woocommerce_gateway_icon', $icon, $this->id );
     }
 
     public function format_amount_for_api( $amount, $currency ) {

@@ -1,12 +1,11 @@
 <?php
 return array(
     'dependencies' => array(
-        'wp-blocks',
+        'wc-blocks-registry',
+        'wc-settings',
         'wp-element',
         'wp-html-entities',
-        'wp-i18n',
-        'wc-blocks-registry',
-        'wc-settings'
+        'wp-i18n'
     ),
-    'version' => '1.0.0'
+    'version' => '1.0.1'
 );
