@@ -221,7 +221,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
             // Extract data using backward-compatible syntax
             $checkout_url           = isset($response['checkoutURL']) ? $response['checkoutURL'] : null;
             $charge_data_from_api   = isset($response['order']['charges'][0]) ? $response['order']['charges'][0] : null;
-            $transaction_id         = isset($charge_data_from_api['id']) ? $charge_data_from_api['id'] : null;
+            $transaction_id         = isset($charge_data_from_api['transactionRef']) ? $charge_data_from_api['transactionRef'] : null;
             $api_order_id           = isset($response['order']['id']) ? $response['order']['id'] : null;
             $transaction_ref        = isset($charge_data_from_api['transactionRef']) ? $charge_data_from_api['transactionRef'] : null;
 
@@ -478,7 +478,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
 
         if ( in_array($verified_status, $successful_statuses) ) {
             // PAYMENT SUCCESS
-            $gateway_transaction_id = $verified_charge['id'];
+            $gateway_transaction_id = $verified_charge['transactionRef'];
             $order->payment_complete( $gateway_transaction_id );
             $order->add_order_note( sprintf( __( 'Everydaymoney payment completed successfully. Transaction ID: %s', 'everydaymoney-gateway' ), $gateway_transaction_id ) );
             
