@@ -64,7 +64,7 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
             $script_data = array(
                 'title'             => $this->gateway->get_title(),
                 'description'       => $this->gateway->get_description(),
-                'icon'              => $this->gateway->get_icon(),
+                'icon'              => $this->gateway->icon,
                 'supports'          => array_keys( $this->gateway->supports ),
                 'test_mode'         => property_exists( $this->gateway, 'test_mode' ) ? $this->gateway->test_mode : false,
                 'gateway_id'        => $this->gateway->id,
@@ -105,7 +105,7 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
         return array(
             'title'             => $this->gateway->get_title(),
             'description'       => $this->gateway->get_description(),
-            'icon'              => $this->gateway->get_icon(),
+            'icon'              => $this->gateway->icon,
             'supports'          => $this->gateway->supports,
             'test_mode'         => property_exists( $this->gateway, 'test_mode' ) ? $this->gateway->test_mode : false,
         );

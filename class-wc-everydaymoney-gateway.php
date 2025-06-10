@@ -362,11 +362,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         
         return apply_filters( 'wc_everydaymoney_charge_data', $charge_data, $order );
     }
-
-    public function get_icon() {
-        return empty($this->icon) ? '' : $this->icon;
-    }
-
+    
     public function format_amount_for_api( $amount, $currency ) {
         return round( (float) $amount, wc_get_price_decimals() );
     }
