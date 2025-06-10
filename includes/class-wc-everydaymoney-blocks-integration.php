@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Everydaymoney Payment Gateway Blocks Integration.
  *
- * @since 1.0.1
+ * @since 1.0.2
  */
 final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodType {
     
@@ -37,11 +37,8 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
         // Define script handle
         $script_handle = 'everydaymoney-blocks-integration';
         
-        // Get the script path - adjust based on your file structure
+        // Get the script path - since this file is in includes/, go up one level
         $script_url = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/js/checkout.js';
-        
-        // If this gateway class is in the root directory, use this instead:
-        // $script_url = plugin_dir_url( __FILE__ ) . 'assets/js/checkout.js';
         
         // Register the script
         wp_register_script(
@@ -54,7 +51,7 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
                 'wp-html-entities',
                 'wp-i18n'
             ),
-            '1.0.2', // Update version when you make changes
+            EVERYDAYMONEY_GATEWAY_VERSION,
             true
         );
 

@@ -3,7 +3,7 @@
  * Plugin Name:       Everydaymoney Payment Gateway
  * Plugin URI:        https://everydaymoney.app.com/integrations
  * Description:       Integrates Everydaymoney Payment Gateway with WooCommerce for basic payments.
- * Version:           1.0.1
+ * Version:           1.0.2
  * Author:            EverydayMoney SAS
  * Author URI:        https://everydaymoney.app
  * License:           GPL-2.0+
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'EVERYDAYMONEY_GATEWAY_PLUGIN_FILE', __FILE__ );
 define( 'EVERYDAYMONEY_GATEWAY_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'EVERYDAYMONEY_GATEWAY_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'EVERYDAYMONEY_GATEWAY_VERSION', '1.0.1' );
+define( 'EVERYDAYMONEY_GATEWAY_VERSION', '1.0.2' );
 define( 'EVERYDAYMONEY_GATEWAY_API_URL', 'https://em-api-prod.everydaymoney.app' );
 define( 'EVERYDAYMONEY_GATEWAY_TEST_API_URL', 'https://em-api-staging.everydaymoney.app' );
 

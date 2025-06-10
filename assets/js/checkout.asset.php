@@ -7,5 +7,5 @@ return array(
         'wp-html-entities',
         'wp-i18n'
     ),
-    'version' => '1.0.1'
+    'version' => '1.0.2'
 );

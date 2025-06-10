@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Everydaymoney API Handler
  *
  * @class       WC_Everydaymoney_API
- * @version     1.0.1
+ * @version     1.0.2
  */
 class WC_Everydaymoney_API {
 

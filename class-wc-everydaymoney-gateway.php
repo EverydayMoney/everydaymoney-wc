@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @class       WC_Everydaymoney_Gateway
  * @extends     WC_Payment_Gateway
- * @version     1.0.1
+ * @version     1.0.2
  */
 class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
 
@@ -23,7 +23,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
 
     public function __construct() {
         $this->id                 = 'everydaymoney_gateway';
-        $this->icon               = apply_filters( 'woocommerce_everydaymoney_gateway_icon', EVERYDAYMONEY_GATEWAY_PLUGIN_URL . 'assets/images/icon.png' );
+        $this->icon = apply_filters( 'woocommerce_everydaymoney_gateway_icon', plugin_dir_url( __FILE__ ) . 'assets/images/icon.png' );
         $this->has_fields         = false;
         $this->method_title       = __( 'Everydaymoney', 'everydaymoney-gateway' );
         $this->method_description = __( 'Accept payments through Everydaymoney. Customers will be redirected to complete their purchase.', 'everydaymoney-gateway' );
@@ -57,6 +57,7 @@ class WC_Everydaymoney_Gateway extends WC_Payment_Gateway {
         
         add_action( 'woocommerce_api_wc_everydaymoney_gateway', array( $this, 'handle_webhook' ) );
         add_action( 'woocommerce_checkout_create_order', array( $this, 'save_order_metadata_on_checkout' ), 10, 2 );
+        add_action( 'woocommerce_blocks_loaded', array( $this, 'woocommerce_gateway_everydaymoney_woocommerce_block_support' ) );
     }
 
     public function init_form_fields() {
