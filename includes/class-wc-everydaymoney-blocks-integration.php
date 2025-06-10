@@ -28,65 +28,84 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
     }
 
     /**
-     * Returns an array of script handles to enqueue for the payment method.
+     * Get payment method script handles for WooCommerce Blocks integration.
+     * This method is called by WooCommerce Blocks to register the payment method.
      *
-     * @return string[]
+     * @return array Array of script handles.
      */
     public function get_payment_method_script_handles() {
-        $script_path       = EVERYDAYMONEY_GATEWAY_PLUGIN_URL . 'assets/js/checkout.js';
-        $script_asset_path = EVERYDAYMONEY_GATEWAY_PLUGIN_DIR . 'assets/js/checkout.asset.php';
-        $script_asset      = file_exists( $script_asset_path )
-            ? require( $script_asset_path )
-            : array(
-                'dependencies' => array( 'wc-blocks-registry', 'wc-settings', 'wp-element', 'wp-html-entities', 'wp-i18n' ),
-                'version'      => EVERYDAYMONEY_GATEWAY_VERSION,
-            );
+        // Define script handle
+        $script_handle = 'everydaymoney-blocks-integration';
         
+        // Get the script path - adjust based on your file structure
+        $script_url = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/js/checkout.js';
+        
+        // If this gateway class is in the root directory, use this instead:
+        // $script_url = plugin_dir_url( __FILE__ ) . 'assets/js/checkout.js';
+        
+        // Register the script
         wp_register_script(
-            'wc-everydaymoney-blocks-integration',
-            $script_path,
-            $script_asset['dependencies'],
-            $script_asset['version'],
+            $script_handle,
+            $script_url,
+            array(
+                'wc-blocks-registry',
+                'wc-settings',
+                'wp-element',
+                'wp-html-entities',
+                'wp-i18n'
+            ),
+            '1.0.2', // Update version when you make changes
             true
         );
 
-        wp_script_add_data( 'wc-everydaymoney-blocks-integration', 'group', 1 );
-        
-        // Register and enqueue styles
-        wp_register_style(
-            'wc-everydaymoney-blocks-integration',
-            EVERYDAYMONEY_GATEWAY_PLUGIN_URL . 'assets/css/checkout.css',
-            [],
-            EVERYDAYMONEY_GATEWAY_VERSION
+        // Prepare data to pass to JavaScript
+        $script_data = array(
+            'title'             => $this->get_title(),
+            'description'       => $this->get_description(),
+            'icon'              => $this->get_icon(),
+            'supports'          => array_keys( $this->supports ),
+            'test_mode'         => $this->test_mode,
+            'gateway_id'        => $this->id,
         );
-        
-        wp_enqueue_style( 'wc-everydaymoney-blocks-integration' );
 
-        return [ 'wc-everydaymoney-blocks-integration' ];
+        // Apply filters to allow customization
+        $script_data = apply_filters( 'wc_everydaymoney_gateway_script_data', $script_data, $this );
+
+        // Localize script with data
+        wp_localize_script(
+            $script_handle,
+            'everydaymoney_gateway_data',
+            $script_data
+        );
+
+        // Set script translations if using WordPress 5.0+
+        if ( function_exists( 'wp_set_script_translations' ) ) {
+            wp_set_script_translations(
+                $script_handle,
+                'everydaymoney-gateway', // Text domain
+                plugin_dir_path( dirname( __FILE__ ) ) . 'languages' // Path to language files
+            );
+        }
+
+        // Return array of script handles
+        return array( $script_handle );
     }
 
     /**
-     * Returns an array of key=>value pairs of data made available to the payment method script.
+     * Get payment method data for WooCommerce Blocks.
+     * This method provides additional data that might be needed by the blocks integration.
      *
-     * @return array
+     * @return array Payment method data.
      */
     public function get_payment_method_data() {
-        if ( ! $this->gateway ) {
-            return [];
-        }
-
-        // Get the icon URL
-        $icon_url = '';
-        if ( ! empty( $this->gateway->icon ) ) {
-            $icon_url = $this->gateway->icon;
-        }
-
-        return [
-            'title'       => $this->get_setting( 'title' ),
-            'description' => $this->get_setting( 'description' ),
-            'supports'    => array_filter( $this->gateway->supports, [ $this->gateway, 'supports' ] ),
-            'icon'        => $icon_url,
-            'test_mode'   => 'yes' === $this->get_setting( 'test_mode', 'no' ),
-        ];
+        return array(
+            'title'             => $this->get_title(),
+            'description'       => $this->get_description(),
+            'icon'              => $this->get_icon(),
+            'supports'          => $this->supports,
+            'test_mode'         => $this->test_mode,
+            'gateway_id'        => $this->id,
+            'enabled'           => $this->is_available(),
+        );
     }
 }
