@@ -55,25 +55,31 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
             true
         );
 
-        // Prepare data to pass to JavaScript
-        $script_data = array(
-            'title'             => $this->get_title(),
-            'description'       => $this->get_description(),
-            'icon'              => $this->get_icon(),
-            'supports'          => array_keys( $this->supports ),
-            'test_mode'         => $this->test_mode,
-            'gateway_id'        => $this->id,
-        );
+        // Get the gateway instance to access settings
+        $gateways = WC()->payment_gateways->payment_gateways();
+        $gateway = isset( $gateways['everydaymoney_gateway'] ) ? $gateways['everydaymoney_gateway'] : null;
 
-        // Apply filters to allow customization
-        $script_data = apply_filters( 'wc_everydaymoney_gateway_script_data', $script_data, $this );
+        if ( $gateway ) {
+            // Prepare data to pass to JavaScript
+            $script_data = array(
+                'title'             => $gateway->get_title(),
+                'description'       => $gateway->get_description(),
+                'icon'              => $gateway->get_icon(),
+                'supports'          => array_keys( $gateway->supports ),
+                'test_mode'         => $gateway->test_mode,
+                'gateway_id'        => $gateway->id,
+            );
 
-        // Localize script with data
-        wp_localize_script(
-            $script_handle,
-            'everydaymoney_gateway_data',
-            $script_data
-        );
+            // Apply filters to allow customization
+            $script_data = apply_filters( 'wc_everydaymoney_gateway_script_data', $script_data, $gateway );
+
+            // Localize script with data
+            wp_localize_script(
+                $script_handle,
+                'everydaymoney_gateway_data',
+                $script_data
+            );
+        }
 
         // Set script translations if using WordPress 5.0+
         if ( function_exists( 'wp_set_script_translations' ) ) {
