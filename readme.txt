@@ -1,11 +1,11 @@
 === Everydaymoney Payment Gateway ===
-Contributors: (your name or company)
+Contributors: (EverydayMoney Team)
 Tags: woocommerce, payment gateway, everydaymoney, payment
 Requires at least: 5.0
 Tested up to: (Current WP Version)
 WC requires at least: 3.5
 WC tested up to: (Current WC Version)
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,7 +17,7 @@ This plugin allows WooCommerce store owners to accept payments via Everydaymoney
 
 == Installation ==
 
-1. Upload the `everydaymoney` folder to the `/wp-content/plugins/` directory.
+1. Upload the `everydaymoney-wc` folder to the `/wp-content/plugins/` directory.
 2. Activate the plugin through the 'Plugins' menu in WordPress.
 3. Go to WooCommerce > Settings > Payments and enable "Everydaymoney".
 4. Configure your API Public Key and API Secret.
@@ -28,14 +28,22 @@ This plugin allows WooCommerce store owners to accept payments via Everydaymoney
 * Initial release.
 
 
-everydaymoney/
-├── everydaymoney.php                     (Main plugin file)
-├── class-wc-everydaymoney-gateway.php    (Gateway logic class)
+everydaymoney-wc/
 ├── assets/
+│   ├── css/
+│   │   ├── checkout.css
+│   │   └── everydaymoney-admin.css
 │   ├── images/
-│   │   └── icon.png                      (Your gateway's icon, ~120x40px is common)
-│   ├── js/
-│   │   └── everydaymoney-admin.js        (Optional: JS for admin settings page)
-│   └── css/
-│       └── everydaymoney-admin.css       (Optional: CSS for admin settings page)
-└── readme.txt                            (Standard WordPress plugin readme)
+│   │   └── icon.png
+│   └── js/
+│       ├── checkout.asset.php
+│       ├── checkout.js
+│       └── everydaymoney-admin.js
+├── includes/
+│   ├── class-wc-everydaymoney-api.php
+│   ├── class-wc-everydaymoney-blocks-integration.php
+│   ├── class-wc-everydaymoney-logger.php
+│   └── class-wc-everydaymoney-gateway.php
+├── everydaymoney.php                    (Main plugin file)
+├── class-wc-everydaymoney-gateway.php   (Gateway logic class)
+└── readme.txt                          (Standard WordPress plugin readme)
