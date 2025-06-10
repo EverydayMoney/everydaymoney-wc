@@ -27,11 +27,15 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
         }
     }
 
+     /**
+     * Returns if this payment method should be active. If false, the scripts will not be enqueued.
+     */
+    public function is_active() {
+        return ! empty( $this->gateway ) && $this->gateway->is_available();
+    }
+
     /**
-     * Get payment method script handles for WooCommerce Blocks integration.
-     * This method is called by WooCommerce Blocks to register the payment method.
-     *
-     * @return array Array of script handles.
+     * Returns an array of scripts/handles to be registered for this payment method.
      */
     public function get_payment_method_script_handles() {
         // Define script handle
@@ -51,27 +55,23 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
                 'wp-html-entities',
                 'wp-i18n'
             ),
-            EVERYDAYMONEY_GATEWAY_VERSION,
+            defined( 'EVERYDAYMONEY_GATEWAY_VERSION' ) ? EVERYDAYMONEY_GATEWAY_VERSION : '1.0.2',
             true
         );
 
-        // Get the gateway instance to access settings
-        $gateways = WC()->payment_gateways->payment_gateways();
-        $gateway = isset( $gateways['everydaymoney_gateway'] ) ? $gateways['everydaymoney_gateway'] : null;
-
-        if ( $gateway ) {
-            // Prepare data to pass to JavaScript
+        // Prepare data to pass to JavaScript only if gateway is available
+        if ( $this->gateway ) {
             $script_data = array(
-                'title'             => $gateway->get_title(),
-                'description'       => $gateway->get_description(),
-                'icon'              => $gateway->get_icon(),
-                'supports'          => array_keys( $gateway->supports ),
-                'test_mode'         => $gateway->test_mode,
-                'gateway_id'        => $gateway->id,
+                'title'             => $this->gateway->get_title(),
+                'description'       => $this->gateway->get_description(),
+                'icon'              => $this->gateway->get_icon(),
+                'supports'          => array_keys( $this->gateway->supports ),
+                'test_mode'         => property_exists( $this->gateway, 'test_mode' ) ? $this->gateway->test_mode : false,
+                'gateway_id'        => $this->gateway->id,
             );
 
             // Apply filters to allow customization
-            $script_data = apply_filters( 'wc_everydaymoney_gateway_script_data', $script_data, $gateway );
+            $script_data = apply_filters( 'wc_everydaymoney_gateway_script_data', $script_data, $this->gateway );
 
             // Localize script with data
             wp_localize_script(
@@ -95,20 +95,19 @@ final class WC_Everydaymoney_Blocks_Integration extends AbstractPaymentMethodTyp
     }
 
     /**
-     * Get payment method data for WooCommerce Blocks.
-     * This method provides additional data that might be needed by the blocks integration.
-     *
-     * @return array Payment method data.
+     * Returns an array of key=>value pairs of data made available to the payment methods script.
      */
     public function get_payment_method_data() {
+        if ( ! $this->gateway ) {
+            return array();
+        }
+
         return array(
-            'title'             => $this->get_title(),
-            'description'       => $this->get_description(),
-            'icon'              => $this->get_icon(),
-            'supports'          => $this->supports,
-            'test_mode'         => $this->test_mode,
-            'gateway_id'        => $this->id,
-            'enabled'           => $this->is_available(),
+            'title'             => $this->gateway->get_title(),
+            'description'       => $this->gateway->get_description(),
+            'icon'              => $this->gateway->get_icon(),
+            'supports'          => $this->gateway->supports,
+            'test_mode'         => property_exists( $this->gateway, 'test_mode' ) ? $this->gateway->test_mode : false,
         );
     }
 }
